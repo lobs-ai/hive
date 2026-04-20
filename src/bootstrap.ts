@@ -28,8 +28,8 @@ for (const dir of [WORK_DIR, TOOLS_DIR, AUDIT_DIR]) {
 // ── Spend guard ───────────────────────────────────────────────────────────────
 
 const spendLimit = parseFloat(process.env.HIVE_SPEND_LIMIT_USD ?? "10");
-if (!process.env.ANTHROPIC_API_KEY) {
-  console.error("ANTHROPIC_API_KEY is not set.");
+if (!process.env.MINIMAX_API_KEY) {
+  console.error("MINIMAX_API_KEY is not set.");
   process.exit(1);
 }
 
@@ -146,13 +146,21 @@ console.log(`Spend limit: $${spendLimit}\n`);
 
 const result = await runAgent({
   agent: "bootstrap",
-  model: "anthropic/claude-sonnet-4-6",
+  model: "minimax/minimax-m2.7",
   task: `Read the constitution (it is embedded in your system prompt). Then explore the agentic toolkit source at ${AGENTIC_DIR} to understand the tool interface and agent loop. Then decide what Hive needs and start building it. Your deliverables: tools in ~/.hive/tools/, playbooks in ~/.hive/playbooks/, ADRs in ~/.hive/decisions/, and at least one real GitHub issue fixed.`,
   cwd: WORK_DIR,
   tools: activeTools,
   timeout: 7200,
   maxTurns: 200,
   systemPrompt: SYSTEM_PROMPT,
+  // MiniMax emits chain-of-thought inside <think>…</think> tags in the text.
+  // Strip them before storing in message history to keep context lean.
+  sanitizeResponseContent: (blocks) =>
+    blocks.map((b) =>
+      b.type === "text"
+        ? { ...b, text: b.text.replace(/<(think|thinking|reasoning)>[\s\S]*?<\/\1>/gi, "").trim() }
+        : b
+    ),
   onProgress: (update) => {
     const label = update.toolName ? `[${update.type}] ${update.toolName}` : `[${update.type}]`;
     process.stdout.write(label + "\n");

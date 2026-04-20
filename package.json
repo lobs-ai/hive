@@ -1,0 +1,19 @@
+{
+  "name": "hive",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "start": "tsx src/bootstrap.ts"
+  },
+  "dependencies": {
+    "@agentic/llm": "file:../agentic/packages/llm",
+    "@agentic/runner": "file:../agentic/packages/runner",
+    "@agentic/tools": "file:../agentic/packages/tools"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.0"
+  }
+}

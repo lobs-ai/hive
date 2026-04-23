@@ -1,0 +1,12 @@
+services:
+  hive:
+    build:
+      context: ..
+      dockerfile: hive/Dockerfile
+    environment:
+      - MINIMAX_API_KEY=${MINIMAX_API_KEY}
+      - HIVE_SPEND_LIMIT_USD=${HIVE_SPEND_LIMIT_USD:-100}
+    volumes:
+      - ${HOME}/.hive:/root/.hive
+      - ./:/app/hive
+      - /app/hive/node_modules

@@ -17,21 +17,21 @@ const HIVE_DIR = path.join(os.homedir(), ".hive");
 const WORK_DIR = process.env.HIVE_WORK_DIR ?? path.join(HIVE_DIR, "workspace");
 const TOOLS_DIR = path.join(HIVE_DIR, "tools");
 const AUDIT_DIR = path.join(HIVE_DIR, "audit");
+const SESSIONS_DIR = path.join(HIVE_DIR, "sessions");
 const AUDIT_FILE = path.join(AUDIT_DIR, `${new Date().toISOString().slice(0, 10)}.jsonl`);
 const PROJECT_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
-const AGENTIC_DIR = path.join(PROJECT_DIR, "..", "agentic");
+const RUN_ID = `${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)}`;
 
-for (const dir of [WORK_DIR, TOOLS_DIR, AUDIT_DIR]) {
+for (const dir of [WORK_DIR, TOOLS_DIR, AUDIT_DIR, SESSIONS_DIR]) {
   fs.mkdirSync(dir, { recursive: true });
 }
 
-// ── Spend guard ───────────────────────────────────────────────────────────────
-
-const spendLimit = parseFloat(process.env.HIVE_SPEND_LIMIT_USD ?? "10");
 if (!process.env.MINIMAX_API_KEY) {
   console.error("MINIMAX_API_KEY is not set.");
   process.exit(1);
 }
+
+const spendLimit = parseFloat(process.env.HIVE_SPEND_LIMIT_USD ?? "999");
 
 // ── Audit log ─────────────────────────────────────────────────────────────────
 
@@ -125,8 +125,8 @@ const SYSTEM_PROMPT = `${constitution}
 
 ## Environment
 
-- Hive project: ${PROJECT_DIR}
-- Agentic toolkit source: ${AGENTIC_DIR}
+- Your source: ${PROJECT_DIR}/src  (editable — changes take effect next run)
+- Your constitution: ${PROJECT_DIR}/constitution.md  (editable directly)
 - Your tool library: ${TOOLS_DIR}  (auto-loaded at startup each run)
 - Your workspace: ${WORK_DIR}
 - Your decisions: ${path.join(HIVE_DIR, "decisions")}
@@ -147,11 +147,11 @@ console.log(`Spend limit: $${spendLimit}\n`);
 const result = await runAgent({
   agent: "bootstrap",
   model: "minimax/minimax-m2.7",
-  task: `Read the constitution (it is embedded in your system prompt). Then explore the agentic toolkit source at ${AGENTIC_DIR} to understand the tool interface and agent loop. Then decide what Hive needs and start building it. Your deliverables: tools in ~/.hive/tools/, playbooks in ~/.hive/playbooks/, ADRs in ~/.hive/decisions/, and at least one real GitHub issue fixed.`,
+  task: `Read the constitution embedded in your system prompt. Read the audit log and ADRs to understand what prior runs did and what slowed them down. Then make Hive better: fix friction, fill gaps in the tool library, improve playbooks, reduce the amnesia tax. Do real external work (fix bugs, build things) to exercise and prove capability — but the primary deliverable is a more capable Hive.`,
   cwd: WORK_DIR,
   tools: activeTools,
-  timeout: 7200,
-  maxTurns: 200,
+  timeout: 86400,
+  maxTurns: 2000,
   systemPrompt: SYSTEM_PROMPT,
   // MiniMax emits chain-of-thought inside <think>…</think> tags in the text.
   // Strip them before storing in message history to keep context lean.
@@ -164,6 +164,19 @@ const result = await runAgent({
   onProgress: (update) => {
     const label = update.toolName ? `[${update.type}] ${update.toolName}` : `[${update.type}]`;
     process.stdout.write(label + "\n");
+    // Record full agent text responses for blog/review purposes
+    if (update.type === "agent_response" && update.content) {
+      fs.appendFileSync(
+        path.join(SESSIONS_DIR, `${RUN_ID}.jsonl`),
+        JSON.stringify({ ts: Date.now(), type: "agent_response", content: update.content }) + "\n"
+      );
+    }
+    if (update.type === "tool_call" && update.toolName && update.toolInput) {
+      fs.appendFileSync(
+        path.join(SESSIONS_DIR, `${RUN_ID}.jsonl`),
+        JSON.stringify({ ts: Date.now(), type: "tool_call", tool: update.toolName, input: update.toolInput }) + "\n"
+      );
+    }
   },
 });
 
@@ -173,3 +186,8 @@ console.log(`Cost:      $${result.costUsd.toFixed(4)}`);
 console.log(`Turns:     ${result.turns}`);
 if (!result.succeeded && result.error) console.log(`Error:     ${result.error}`);
 audit({ type: "run_summary", ...result });
+// Save full session summary for blog/review
+fs.writeFileSync(
+  path.join(SESSIONS_DIR, `${RUN_ID}-summary.json`),
+  JSON.stringify({ runId: RUN_ID, ...result }, null, 2)
+);
